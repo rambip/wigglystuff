@@ -27,7 +27,9 @@ function loadLib() {
     const [react, reactDomClient, excal] = await Promise.all([
       import(/* @vite-ignore */ `${CDN}/react@${REACT_VERSION}`),
       import(/* @vite-ignore */ `${CDN}/react-dom@${REACT_VERSION}/client`),
-      import(/* @vite-ignore */ `${CDN}/@excalidraw/excalidraw@${EXCALIDRAW_VERSION}?deps=${deps}`),
+      import(
+        /* @vite-ignore */ `${CDN}/@excalidraw/excalidraw@${EXCALIDRAW_VERSION}?deps=${deps}`
+      ),
     ]);
     return {
       React: react.default ?? react,
@@ -83,7 +85,8 @@ function detectDark(el) {
     if (node.nodeType === 1) {
       const cl = node.classList;
       if (cl && (cl.contains("dark") || cl.contains("dark-theme"))) return true;
-      if (node.getAttribute && node.getAttribute("data-theme") === "dark") return true;
+      if (node.getAttribute && node.getAttribute("data-theme") === "dark")
+        return true;
     }
     node = node.parentNode || node.host || null;
   }
@@ -125,23 +128,33 @@ function makeApp(React, Excalidraw, serializeAsJSON, exportToBlob, model, el) {
       if (forced) return; // pinned by the user, don't track the notebook
       const update = () => setDark(detectDark(el));
       const obs = new MutationObserver(update);
-      const opts = { attributes: true, attributeFilter: ["class", "data-theme"], subtree: true };
+      const opts = {
+        attributes: true,
+        attributeFilter: ["class", "data-theme"],
+        subtree: true,
+      };
       obs.observe(document.documentElement, opts);
       const host = el.getRootNode && el.getRootNode().host;
       if (host) obs.observe(host, opts);
-      const mq = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)");
+      const mq =
+        window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)");
       if (mq && mq.addEventListener) mq.addEventListener("change", update);
       return () => {
         obs.disconnect();
-        if (mq && mq.removeEventListener) mq.removeEventListener("change", update);
+        if (mq && mq.removeEventListener)
+          mq.removeEventListener("change", update);
       };
     }, [forced]);
+
+    const refresh = () => apiRef.current && apiRef.current.refresh();
 
     // Excalidraw doesn't always re-theme from the `theme` prop after mount, so
     // also push it imperatively whenever the detected theme flips.
     React.useEffect(() => {
       if (apiRef.current) {
-        apiRef.current.updateScene({ appState: { theme: dark ? "dark" : "light" } });
+        apiRef.current.updateScene({
+          appState: { theme: dark ? "dark" : "light" },
+        });
       }
     }, [dark]);
 
@@ -151,8 +164,33 @@ function makeApp(React, Excalidraw, serializeAsJSON, exportToBlob, model, el) {
     // cursor. refresh() recomputes it; re-run on scroll/resize (capture: true so
     // we catch the notebook's own scroll container, not just window).
     React.useEffect(() => {
-      const refresh = () => apiRef.current && apiRef.current.refresh();
       const t = setTimeout(refresh, 100);
+      window.addEventListener("scroll", refresh, true);
+      window.addEventListener("resize", refresh);
+      return () => {
+        clearTimeout(t);
+        window.removeEventListener("scroll", refresh, true);
+        window.removeEventListener("resize", refresh);
+      };
+    }, []);
+
+    React.useEffect(() => {
+      const t = setTimeout(() => {
+        if (apiRef.current) {
+          refresh();
+
+          // Scroll/zoom to fit all elements, capped at 100%
+          const elements = apiRef.current.getSceneElements();
+          if (elements.length > 0) {
+            apiRef.current.scrollToContent(elements, {
+              fitToContent: true,
+              viewportZoomFactor: 1, // max 100% — won't zoom *in* beyond this
+              animate: false,
+            });
+          }
+        }
+      }, 100);
+
       window.addEventListener("scroll", refresh, true);
       window.addEventListener("resize", refresh);
       return () => {
@@ -297,7 +335,10 @@ function installShadowDomShim() {
   // DocumentOrShadowRoot), so walk up to grab it before shadowing it.
   let proto = document;
   let desc = null;
-  while (proto && !(desc = Object.getOwnPropertyDescriptor(proto, "activeElement"))) {
+  while (
+    proto &&
+    !(desc = Object.getOwnPropertyDescriptor(proto, "activeElement"))
+  ) {
     proto = Object.getPrototypeOf(proto);
   }
   const nativeActiveGet = desc && desc.get;
@@ -307,7 +348,12 @@ function installShadowDomShim() {
       configurable: true,
       get() {
         let a = nativeActiveGet.call(document);
-        while (a && a.shadowRoot && a.shadowRoot.activeElement && hasExcalidraw(a.shadowRoot)) {
+        while (
+          a &&
+          a.shadowRoot &&
+          a.shadowRoot.activeElement &&
+          hasExcalidraw(a.shadowRoot)
+        ) {
           a = a.shadowRoot.activeElement;
         }
         return a;
@@ -364,14 +410,23 @@ async function render({ model, el }) {
     const { React, createRoot, Excalidraw, serializeAsJSON, exportToBlob } =
       await loadLib();
     await injectCss(el.getRootNode());
-    const App = makeApp(React, Excalidraw, serializeAsJSON, exportToBlob, model, el);
+    const App = makeApp(
+      React,
+      Excalidraw,
+      serializeAsJSON,
+      exportToBlob,
+      model,
+      el,
+    );
     root = createRoot(mount);
     root.render(React.createElement(App));
     requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
   } catch (err) {
     mount.textContent =
       "Failed to load Excalidraw from CDN. This widget needs network access " +
-      "on first render and does not work fully offline. (" + err + ")";
+      "on first render and does not work fully offline. (" +
+      err +
+      ")";
     mount.style.cssText = "padding:1rem;color:#b00;font-family:sans-serif";
   }
 
